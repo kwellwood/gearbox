@@ -6,6 +6,9 @@
  * conditions, see license.txt.
  */
 
+#ifndef _WELLWOOD_GEARBOX_H_
+#define _WELLWOOD_GEARBOX_H_
+
 /*
  * Gearbox is a tree of connected gears, with the drive gear (at the root) ticking all other gears
  * connected to it and those connected to them. Like clockwork, every action is synchronized with
@@ -25,37 +28,63 @@ class Base_Gear
 public:
 
     /*
-     * Connects 'gear' to be driven by this gear. 'ratio' / 'step' rotations of this gear will
-     * produce one rotation in 'gear'. It's phase (0 to 'ratio' - 1) will start at 'phase'.
-     * 'step' is the phase increment per tick: Fractional gear ratios can be produced by passing
-     * greater than 1. 'order' ranks 'gear' among the other gears driven by this one: The lowest
-     * order gear is ticked first.
+     * Connects this gear to drive gear 'pinion'. 'ratio' / 'step' rotations of the drive gear
+     * will produce one rotation of this gear. Phase (1 to 'ratio') will start with 'phase' steps
+     * already elapsed. Phase is pre-incremented, so if phase starts at 0, the first tick() will
+     * see a phase of 1. 'step' is the phase increment per tick (1 to 'ratio'): Fractional gear
+     * ratios can be produced with a step greater than 1. 'priority' ranks the gear in the tick
+     * sequence of all gears directly driven by 'pinion', lowest number first.
      */
-    void connect(Base_Gear* gear, int ratio, int phase = 0, int step = 1, int order = 0);
+    void connect(Base_Gear* pinion,
+                 unsigned short int ratio,
+                 unsigned short int phase = 0,
+                 unsigned short int step = 1,
+                 unsigned short int priority = 0);
 
     /*
-     * Begins engaging or disengaging this gear. Gears are engaged by default. The operation will
-     * complete at the end of the next rotation.  A disengaged gear is still ticked and it still
-     * drives connected gears, but its tick and rotation events are suppressed.
+     * This is a special purpose method to allow the engagement of a gear to be delayed for more
+     * than one rotation.
+     *
+     * This may only be called from an on_engaged() handler, otherwise the behavior undefined.
+     */
+    void delay_engagement() { if (state == Engaged) state = Engaging; }
+
+    /*
+     * Begins engaging or disengaging this gear. Gears are initially are engaged by default. A
+     * request to engage the gear will complete on the next rotation. A request to disengage the
+     * gear will complete on the next tick (as soon as possible).
+     *
+     * A gear is still ticked and it still drives connected gears while it is not engaged, but its
+     * tick and rotation events are suppressed.
      */
     void engage(bool engaged);
+
+    /*
+     * Returns true when the gear is fully disengaged.
+     */
+    bool is_disengaged() const { return state == Disengaged; }
+
+    /*
+     * Returns true when the gear is fully engaged.
+     */
+    bool is_engaged() const { return state == Engaged; }
 
     /*
      * Returns the current phase of rotation. Typically is 1 to ratio, but if the gear has a
      * fractional ratio (step > 1), its phase can be as much as ratio + step at the end of a
      * rotation.
      */
-    short get_phase() const { return phase; }
+    unsigned short int get_phase() const { return phase; }
 
     /*
      * Returns the gear's ratio that was configured when it was connected to its drive gear.
      */
-    short get_ratio() const { return ratio; }
+    unsigned short int get_ratio() const { return ratio; }
 
     /*
      * Returns the gear's step that was configured when it was connected to its drive gear.
      */    
-    short get_step() const { return step; }
+    unsigned short int get_step() const { return step; }
 
     /*
      * Ticks the gear, updating its phase.
@@ -64,11 +93,12 @@ public:
 
 protected:
 
-    Base_Gear();
+    Base_Gear(unsigned short int phase, unsigned short int step);
 
     /*
      * Called when the gear becomes engaged at the end of a rotation, just before on_tick() and
-     * on_rotation().
+     * on_rotation(). There will always be a corresponding call to on_disengaged(), if the gear is
+     * layer disengaged, to allow anything enabled by this handler to also be disabled.
      */
     virtual void on_engaged() { }
 
@@ -85,6 +115,11 @@ protected:
     /*
      * Called when the gear becomes disengaged at the end of a rotation, just after on_tick() and
      * on_rotation().
+     *
+     * If the gear begins engaging, the on_disengaged() handler will be called when it becomes
+     * disengaged again, even if it was never fully engaged. Thus, { engage(true); engage(false); }
+     * will put the gear in the Engaging state and then immediately into the Disengaging state,
+     * which will invoke on_disengaged() on the next rotation.
      */
     virtual void on_disengaged() { }
 
@@ -94,10 +129,13 @@ protected:
 
 private:
 
-    unsigned short ratio;           // number of drive gear rotations to one rotation of this
-    unsigned short step;            // number of steps phase change per rotation of the drive gear
-    unsigned short phase;           // current phase (0..ratio-1)
-    unsigned short order;           // order among siblings (ticked in ascending order)
+    Base_Gear(const Base_Gear& other) = delete;
+    Base_Gear& operator=(const Base_Gear&) = delete;
+
+    unsigned short int ratio;       // number of drive gear rotations to one rotation of this
+    unsigned short int step;        // number of steps phase change per rotation of the drive gear
+    unsigned short int phase;       // current phase (1..ratio)
+    unsigned short int priority;    // order among siblings (ticked by priority in ascending order)
 
     Base_Gear* driven;              // linked listed of gears being driven by this
     Base_Gear* next;                // next sibling gear
@@ -119,9 +157,22 @@ public:
     /*
      * Creates a new gear that will notify 'observer' of its events. 'observer' cannot be null and
      * its lifetime must extend beyond the gear's.
+     *
+     * Use this constructor to instantiate a gear that will be driven by another. Its starting phase
+     * and step size will be determined when it is connected to a drive gear.
      */
     explicit Gear(T* observer)
-    : observer(observer)
+    : Base_Gear(0, 1)
+    , observer(observer)
+    { }
+
+    /*
+     * Creates a new main drive gear (not driven by another), that will notify 'observer' of its
+     * events. 'observer' cannot be null and its lifetime must extend beyond the gear's.
+     */
+    explicit Gear(T* observer, unsigned short int phase, unsigned short int step)
+    : Base_Gear(phase, step)
+    , observer(observer)
     { }
 
     void handle_engaged(Handler handler) { engaged_handler = handler; }
@@ -161,8 +212,9 @@ class Counter : public Base_Gear
 {
 public:
 
-    Counter()
-    : total(0ULL)
+    Counter(unsigned short int phase = 0, unsigned short int step = 1)
+    : Base_Gear(phase, step)
+    , total(0ULL)
     { }
 
     /*
@@ -178,3 +230,5 @@ private:
 
     unsigned long long int total;
 };
+
+#endif // _WELLWOOD_GEARBOX_H_ //

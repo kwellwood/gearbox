@@ -11,39 +11,50 @@
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - //
 
-Base_Gear::Base_Gear()
+Base_Gear::Base_Gear(unsigned short int phase, unsigned short int step)
 : state(Engaged)
 , ratio(1)
-, step(1)
-, phase(0)
-, order(0)
+, step((step > 0) ? step : 1)
+, phase(phase)
+, priority(0)
 , driven(nullptr)
 , next(nullptr)
 { }
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - //
 
-void Base_Gear::connect(Base_Gear* gear, int ratio, int phase, int step, int order)
+void Base_Gear::connect(Base_Gear* pinion,
+                        unsigned short int ratio,
+                        unsigned short int phase,
+                        unsigned short int step,
+                        unsigned short int priority)
 {
-    gear->ratio = ratio;
-    gear->phase = phase;
-    gear->step = step;
-    gear->order = order;
+    this->ratio = ratio;
+    this->phase = phase;
+    this->step = (step > 0) ? step : 1;
+    this->priority = priority;
 
-    if (driven != nullptr && driven->order <= gear->order)
+    if (pinion->driven != nullptr && pinion->driven->priority <= this->priority)
     {
-        Base_Gear* g = driven;
-        while (g->next != nullptr && g->next->order <= gear->order)
+        int i = 0;
+        Base_Gear* g = pinion->driven;
+        while (g->next != nullptr && g->next->priority <= this->priority)
+        {
+            i++;
+            g = g->next;
+        }
+        this->next = g->next;
+        g->next = this;
+        g = pinion->driven;
+        while (g != nullptr)
         {
             g = g->next;
         }
-        gear->next = g->next;
-        g->next = gear;
     }
     else
     {
-        gear->next = driven;
-        driven = gear;
+        this->next = pinion->driven;
+        pinion->driven = this;
     }
 }
 
@@ -53,14 +64,26 @@ void Base_Gear::engage(bool engaged)
 {
     if (!engaged)
     {
-        if (state == Engaged)
+        if (state == Engaged || state == Engaging)
         {
+            // if on_engaged() was called and it delayed the gear engagement by one more rotation
+            // (via delay_engagement() or assigning 'state' directly), the gear will still be in
+            // the Engaging state and may require the corresponding on_disengaged() handler to be
+            // called as well.
             state = Disengaging;
         }
     }
-    else if (state == Disengaged)
+    else
     {
-        state = Engaging;
+        if (state == Disengaged)
+        {
+            state = Engaging;
+        }
+        else if (state == Disengaging)
+        {
+            // hasn't disengaged yet, so go straight back to engaged
+            state = Engaged;
+        }
     }
 }
 
@@ -68,8 +91,7 @@ void Base_Gear::engage(bool engaged)
 
 void Base_Gear::tick()
 {
-    phase += step;
-    if (phase >= ratio)
+    if (phase + step >= ratio)
     {
         if (state == Engaging)
         {
@@ -87,8 +109,7 @@ void Base_Gear::tick()
             on_disengaged();
         }
 
-        // don't reduce phase until after handlers have been called in case they read it
-        phase -= ratio;
+        phase = (phase + step) - ratio;
 
         Base_Gear* g = driven;
         while (g != nullptr)
@@ -97,9 +118,19 @@ void Base_Gear::tick()
             g = g->next;
         }
     }
-    else if (state == Engaged)
+    else
     {
-        on_tick();
+        if (state == Engaged)
+        {
+            on_tick();
+        }
+        else if (state == Disengaging)
+        {
+            state = Disengaged;
+            on_disengaged();
+        }
+
+        phase += step;
     }
 }
 
