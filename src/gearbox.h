@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 Kevin Wellwood
+ * Copyright (c) 2017-2020 Kevin Wellwood
  * All rights reserved.
  *
  * This source code is distributed under the Modified BSD License. For terms and
@@ -8,6 +8,8 @@
 
 #ifndef _WELLWOOD_GEARBOX_H_
 #define _WELLWOOD_GEARBOX_H_
+
+#include <cstdint>
 
 /*
  * Gearbox is a tree of connected gears, with the drive gear (at the root) ticking all other gears
@@ -35,11 +37,7 @@ public:
      * ratios can be produced with a step greater than 1. 'priority' ranks the gear in the tick
      * sequence of all gears directly driven by 'pinion', lowest number first.
      */
-    void connect(Base_Gear* pinion,
-                 unsigned short int ratio,
-                 unsigned short int phase = 0,
-                 unsigned short int step = 1,
-                 unsigned short int priority = 0);
+    void connect(Base_Gear* pinion, uint16_t ratio, uint16_t phase = 0, uint16_t step = 1, uint16_t priority = 0);
 
     /*
      * This is a special purpose method to allow the engagement of a gear to be delayed for more
@@ -70,21 +68,26 @@ public:
     bool is_engaged() const { return state == Engaged; }
 
     /*
+     * Returns true if the gear is in the process of engaging but has not yet fully engaged.
+     */
+    bool is_engaging() const { return state == Engaging; }
+
+    /*
      * Returns the current phase of rotation. Typically is 1 to ratio, but if the gear has a
      * fractional ratio (step > 1), its phase can be as much as ratio + step at the end of a
      * rotation.
      */
-    unsigned short int get_phase() const { return phase; }
+    uint16_t get_phase() const { return phase; }
 
     /*
      * Returns the gear's ratio that was configured when it was connected to its drive gear.
      */
-    unsigned short int get_ratio() const { return ratio; }
+    uint16_t get_ratio() const { return ratio; }
 
     /*
      * Returns the gear's step that was configured when it was connected to its drive gear.
      */    
-    unsigned short int get_step() const { return step; }
+    uint16_t get_step() const { return step; }
 
     /*
      * Ticks the gear, updating its phase.
@@ -93,7 +96,7 @@ public:
 
 protected:
 
-    Base_Gear(unsigned short int phase, unsigned short int step);
+    Base_Gear(uint16_t phase, uint16_t step);
 
     /*
      * Called when the gear becomes engaged at the end of a rotation, just before on_tick() and
@@ -132,10 +135,10 @@ private:
     Base_Gear(const Base_Gear& other) = delete;
     Base_Gear& operator=(const Base_Gear&) = delete;
 
-    unsigned short int ratio;       // number of drive gear rotations to one rotation of this
-    unsigned short int step;        // number of steps phase change per rotation of the drive gear
-    unsigned short int phase;       // current phase (1..ratio)
-    unsigned short int priority;    // order among siblings (ticked by priority in ascending order)
+    uint16_t ratio;                 // number of drive gear rotations to one rotation of this
+    uint16_t step;                  // number of steps phase change per rotation of the drive gear
+    uint16_t phase;                 // current phase (1..ratio)
+    uint16_t priority;              // order among siblings (ticked by priority in ascending order)
 
     Base_Gear* driven;              // linked listed of gears being driven by this
     Base_Gear* next;                // next sibling gear
@@ -170,7 +173,7 @@ public:
      * Creates a new main drive gear (not driven by another), that will notify 'observer' of its
      * events. 'observer' cannot be null and its lifetime must extend beyond the gear's.
      */
-    explicit Gear(T* observer, unsigned short int phase, unsigned short int step)
+    explicit Gear(T* observer, uint16_t phase, uint16_t step)
     : Base_Gear(phase, step)
     , observer(observer)
     { }
@@ -212,7 +215,7 @@ class Counter : public Base_Gear
 {
 public:
 
-    Counter(unsigned short int phase = 0, unsigned short int step = 1)
+    Counter(uint16_t phase = 0, uint16_t step = 1)
     : Base_Gear(phase, step)
     , total(0ULL)
     { }
@@ -220,7 +223,7 @@ public:
     /*
      * Returns the total number of gear rotations.
      */
-    unsigned long long int count() const { return total; }
+    uint64_t count() const { return total; }
 
 protected:
 
@@ -228,7 +231,7 @@ protected:
 
 private:
 
-    unsigned long long int total;
+    uint64_t total;
 };
 
 #endif // _WELLWOOD_GEARBOX_H_ //

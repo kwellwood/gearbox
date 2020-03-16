@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017 Kevin Wellwood
+ * Copyright (c) 2017-2020 Kevin Wellwood
  * All rights reserved.
  *
  * This source code is distributed under the Modified BSD License. For terms and
@@ -11,7 +11,7 @@
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - //
 
-Base_Gear::Base_Gear(unsigned short int phase, unsigned short int step)
+Base_Gear::Base_Gear(uint16_t phase, uint16_t step)
 : state(Engaged)
 , ratio(1)
 , step((step > 0) ? step : 1)
@@ -23,11 +23,7 @@ Base_Gear::Base_Gear(unsigned short int phase, unsigned short int step)
 
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - //
 
-void Base_Gear::connect(Base_Gear* pinion,
-                        unsigned short int ratio,
-                        unsigned short int phase,
-                        unsigned short int step,
-                        unsigned short int priority)
+void Base_Gear::connect(Base_Gear* pinion, uint16_t ratio, uint16_t phase, uint16_t step, uint16_t priority)
 {
     this->ratio = ratio;
     this->phase = phase;
@@ -66,10 +62,9 @@ void Base_Gear::engage(bool engaged)
     {
         if (state == Engaged || state == Engaging)
         {
-            // if on_engaged() was called and it delayed the gear engagement by one more rotation
-            // (via delay_engagement() or assigning 'state' directly), the gear will still be in
-            // the Engaging state and may require the corresponding on_disengaged() handler to be
-            // called as well.
+            // in the event that on_engaged() was called and it delayed the gear engagement by
+            // one more rotation, the gear will still be in the Engaging state and may require
+            // the corresponding on_disengaged() handler to be called as well.
             state = Disengaging;
         }
     }
@@ -178,7 +173,7 @@ int main(int argc, char** argv)
             User_Class run_time;
             ms_counter.connect(&(run_time.gear), 1000);
 
-    for (int i = 0; i < 24999; i++)
+    for (int32_t i = 0; i < 24999; i++)
     {
         isr.tick();
     }
